@@ -1,5 +1,5 @@
 """
-Step 7-11: Slack Bot with Action Tools + RAG + Memory + MCP + Storage
+Step 7-15: Slack Bot with Action Tools + RAG + Memory + MCP + Storage + Scheduler + Web Search
 Full-featured bot with all capabilities!
 
 Following Microsoft Agent Framework best practices:
@@ -79,6 +79,17 @@ from maf_openclaw_mini.scheduler import (
     set_reminder,
     list_reminders,
     cancel_reminder,
+)
+
+# Web search imports (following MAF tool patterns)
+from maf_openclaw_mini.tools import web_search, fetch_url
+
+# Utility imports (production hardening)
+from maf_openclaw_mini.utils import (
+    setup_logging,
+    get_logger,
+    log_agent_response,
+    format_error_for_user,
 )
 
 # ======================
@@ -321,6 +332,10 @@ REMINDERS:
 - list_reminders: List active reminders for the user
 - cancel_reminder: Cancel a reminder by ID
 
+WEB SEARCH:
+- web_search: Search the web for current information, news, documentation
+- fetch_url: Fetch and read content from a specific URL
+
 MCP TOOLS (if available):
 - github_* tools: Use for GitHub operations (issues, repos, PRs)
 - notion_* tools: Use for Notion operations (pages, databases)
@@ -334,6 +349,8 @@ Examples:
 - "Set a daily reminder at 9am" -> USE set_reminder tool
 - "Create a GitHub issue" -> USE the appropriate github_* tool
 - "Search Notion pages" -> USE the appropriate notion_* tool
+- "What's the latest news about Python?" -> USE web_search tool
+- "Read this article: https://..." -> USE fetch_url tool
 
 When citing search results, mention the channel and who said it.
 Keep responses concise. Use Slack formatting: *bold*, _italic_, `code`."""
@@ -361,6 +378,9 @@ Keep responses concise. Use Slack formatting: *bold*, _italic_, `code`."""
         set_reminder,
         list_reminders,
         cancel_reminder,
+        # Web search tools
+        web_search,
+        fetch_url,
     ]
 
     # Add MCP tools if available (following MAF tool integration patterns)
@@ -429,7 +449,7 @@ async def handle_mention(event, say):
             ))
     except Exception as e:
         print(f"[Error] {e}")
-        await say(f"Sorry, I encountered an error: {str(e)}")
+        await say(format_error_for_user(e))
 
 
 @app.event("message")
@@ -474,7 +494,7 @@ async def handle_dm(event, say):
             ))
     except Exception as e:
         print(f"[Error] {e}")
-        await say(f"Sorry, I encountered an error: {str(e)}")
+        await say(format_error_for_user(e))
 
 
 # ======================
@@ -483,6 +503,10 @@ async def handle_dm(event, say):
 
 async def main():
     global bot_user_id
+
+    # Initialize logging (production hardening)
+    setup_logging()
+    logger = get_logger(__name__)
 
     print("=" * 50)
     print("MAF Slack Bot - Full Featured!")
@@ -541,6 +565,7 @@ async def main():
     print("  - RAG: Search past Slack messages")
     print("  - Memory: Remember facts about users (mem0)")
     print("  - Scheduler: Reminders and scheduled messages")
+    print("  - Web Search: Search the web for current info")
     print("  - Tools: Slack actions, time, math")
     if is_mcp_enabled():
         print(f"  - MCP: {', '.join(get_connected_servers())} integration")
@@ -552,6 +577,7 @@ async def main():
     print('  "What time is it?"')
     print('  "Remind me in 30 minutes to check email"')
     print('  "Set a daily reminder at 9am to standup"')
+    print('  "Search the web for Python 3.12 new features"')
     if is_mcp_enabled():
         if "github" in get_connected_servers():
             print('  "List my GitHub repos"')
