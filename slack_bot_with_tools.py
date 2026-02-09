@@ -72,6 +72,15 @@ from maf_openclaw_mini.storage import (
     build_conversation_context,
 )
 
+# Scheduler imports (task scheduling and reminders)
+from maf_openclaw_mini.scheduler import (
+    start_task_scheduler,
+    stop_task_scheduler,
+    set_reminder,
+    list_reminders,
+    cancel_reminder,
+)
+
 # ======================
 # SLACK APP SETUP
 # ======================
@@ -307,6 +316,11 @@ UTILITIES:
 - get_current_time: ALWAYS use this when asked about time, date, or "what time is it"
 - calculate: ALWAYS use this for any math questions
 
+REMINDERS:
+- set_reminder: Set one-time or recurring reminders (e.g., "remind me in 5 minutes", "every monday at 9am")
+- list_reminders: List active reminders for the user
+- cancel_reminder: Cancel a reminder by ID
+
 MCP TOOLS (if available):
 - github_* tools: Use for GitHub operations (issues, repos, PRs)
 - notion_* tools: Use for Notion operations (pages, databases)
@@ -316,6 +330,8 @@ Examples:
 - "What did John say about the project?" -> USE search_slack_history tool
 - "Find discussions about meetings" -> USE search_slack_history tool
 - "List channels" -> USE list_slack_channels tool
+- "Remind me in 30 minutes to check email" -> USE set_reminder tool
+- "Set a daily reminder at 9am" -> USE set_reminder tool
 - "Create a GitHub issue" -> USE the appropriate github_* tool
 - "Search Notion pages" -> USE the appropriate notion_* tool
 
@@ -341,6 +357,10 @@ Keep responses concise. Use Slack formatting: *bold*, _italic_, `code`."""
         # Utility tools
         get_current_time,
         calculate,
+        # Reminder tools (task scheduler)
+        set_reminder,
+        list_reminders,
+        cancel_reminder,
     ]
 
     # Add MCP tools if available (following MAF tool integration patterns)
@@ -504,6 +524,11 @@ async def main():
     except Exception as e:
         print(f"MCP: Failed to initialize - {e}")
 
+    # Initialize Task Scheduler (reminders)
+    print("Initializing Task Scheduler...")
+    start_task_scheduler()
+    print("Scheduler: Started")
+
     # Get bot user ID
     auth = await web_client.auth_test()
     bot_user_id = auth["user_id"]
@@ -515,6 +540,7 @@ async def main():
     print("  - Storage: SQLite session & message history")
     print("  - RAG: Search past Slack messages")
     print("  - Memory: Remember facts about users (mem0)")
+    print("  - Scheduler: Reminders and scheduled messages")
     print("  - Tools: Slack actions, time, math")
     if is_mcp_enabled():
         print(f"  - MCP: {', '.join(get_connected_servers())} integration")
@@ -524,6 +550,8 @@ async def main():
     print('  "I love Python programming"  (bot will remember!)')
     print('  "What do you remember about me?"')
     print('  "What time is it?"')
+    print('  "Remind me in 30 minutes to check email"')
+    print('  "Set a daily reminder at 9am to standup"')
     if is_mcp_enabled():
         if "github" in get_connected_servers():
             print('  "List my GitHub repos"')
@@ -539,6 +567,9 @@ async def main():
     finally:
         # Cleanup on exit
         print("\nShutting down...")
+
+        # Stop task scheduler
+        await stop_task_scheduler()
 
         # Stop background indexer
         await stop_background_indexer()
