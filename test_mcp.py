@@ -91,7 +91,9 @@ async def main():
     print(f"Converted {len(maf_tools)} tools to MAF format")
 
     for tool_func in maf_tools[:5]:
-        print(f"  - {tool_func.__name__}")
+        # FunctionTool objects have name attribute, not __name__
+        name = getattr(tool_func, 'name', getattr(tool_func, '__name__', str(tool_func)))
+        print(f"  - {name}")
 
     if len(maf_tools) > 5:
         print(f"  ... and {len(maf_tools) - 5} more")

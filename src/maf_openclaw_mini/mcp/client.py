@@ -103,7 +103,7 @@ async def _connect_server(config: MCPServerConfig) -> None:
     is_windows = sys.platform == "win32"
 
     if is_windows:
-        # Windows: use shell=True
+        # Windows: use shell=True, bytes mode for reliable I/O
         cmd = [config.command] + config.args
         process = subprocess.Popen(
             cmd,
@@ -112,8 +112,6 @@ async def _connect_server(config: MCPServerConfig) -> None:
             stderr=subprocess.PIPE,
             env=env,
             shell=True,
-            text=True,
-            bufsize=1,
         )
     else:
         # Unix: no shell needed
@@ -123,8 +121,6 @@ async def _connect_server(config: MCPServerConfig) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=env,
-            text=True,
-            bufsize=1,
         )
 
     server = MCPServer(
@@ -197,18 +193,38 @@ async def _read_server_output(server: MCPServer) -> None:
     Runs in a background task and resolves pending requests
     when responses are received.
     """
-    loop = asyncio.get_event_loop()
+    import threading
+
+    def blocking_readline():
+        """Read a line in a thread-safe way."""
+        try:
+            if server.process and server.process.stdout:
+                line = server.process.stdout.readline()
+                return line.decode() if isinstance(line, bytes) else line
+        except Exception:
+            pass
+        return None
 
     while server.process and server.process.poll() is None:
         try:
-            # Read line in executor to avoid blocking
-            line = await loop.run_in_executor(
-                None,
-                server.process.stdout.readline
-            )
+            # Use threading for Windows compatibility
+            result = [None]
+            read_complete = threading.Event()
 
+            def do_read():
+                result[0] = blocking_readline()
+                read_complete.set()
+
+            read_thread = threading.Thread(target=do_read, daemon=True)
+            read_thread.start()
+
+            # Wait with timeout
+            await asyncio.sleep(0.1)
+            if not read_complete.wait(timeout=0.5):
+                continue
+
+            line = result[0]
             if not line:
-                await asyncio.sleep(0.1)
                 continue
 
             line = line.strip()
@@ -263,8 +279,8 @@ async def _send_request(server: MCPServer, method: str, params: dict) -> Any:
     future = loop.create_future()
     server.pending_requests[request_id] = future
 
-    # Send request
-    message = json.dumps(request) + "\n"
+    # Send request (encode to bytes for Windows compatibility)
+    message = (json.dumps(request) + "\n").encode()
     server.process.stdin.write(message)
     server.process.stdin.flush()
 
@@ -287,7 +303,7 @@ def _send_notification(server: MCPServer, method: str, params: dict) -> None:
         "params": params,
     }
 
-    message = json.dumps(notification) + "\n"
+    message = (json.dumps(notification) + "\n").encode()
     server.process.stdin.write(message)
     server.process.stdin.flush()
 
