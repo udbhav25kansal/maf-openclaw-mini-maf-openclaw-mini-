@@ -1,10 +1,12 @@
 """
-Step 7 & 8: Slack Bot with Action Tools + RAG
-The bot can now DO things in Slack AND search message history!
+Step 7-10: Slack Bot with Action Tools + RAG + Memory + MCP
+The bot can now DO things in Slack, search message history, remember facts, and use external tools!
 
 Following Microsoft Agent Framework best practices:
 - https://learn.microsoft.com/en-us/agent-framework/tutorials/agents/function-tools
 - https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-rag
+- https://learn.microsoft.com/en-us/agent-framework/tutorials/agents/memory
+- https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-tools
 """
 
 import asyncio
@@ -45,6 +47,16 @@ from maf_openclaw_mini.memory.mem0_client import (
     search_memory,
     add_memory,
     build_memory_context,
+)
+
+# MCP imports (following MAF tool integration patterns)
+# https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-tools
+from maf_openclaw_mini.mcp import (
+    initialize_mcp,
+    shutdown_mcp,
+    is_mcp_enabled,
+    get_connected_servers,
+    mcp_tools_to_maf_tools,
 )
 
 # ======================
@@ -270,11 +282,17 @@ UTILITIES:
 - get_current_time: ALWAYS use this when asked about time, date, or "what time is it"
 - calculate: ALWAYS use this for any math questions
 
+MCP TOOLS (if available):
+- github_* tools: Use for GitHub operations (issues, repos, PRs)
+- notion_* tools: Use for Notion operations (pages, databases)
+
 Examples:
 - "What time is it?" -> USE get_current_time tool
 - "What did John say about the project?" -> USE search_slack_history tool
 - "Find discussions about meetings" -> USE search_slack_history tool
 - "List channels" -> USE list_slack_channels tool
+- "Create a GitHub issue" -> USE the appropriate github_* tool
+- "Search Notion pages" -> USE the appropriate notion_* tool
 
 When citing search results, mention the channel and who said it.
 Keep responses concise. Use Slack formatting: *bold*, _italic_, `code`."""
@@ -285,21 +303,30 @@ Keep responses concise. Use Slack formatting: *bold*, _italic_, `code`."""
     else:
         instructions = base_instructions
 
+    # Build tools list
+    tools = [
+        # RAG tool (following MAF best practices)
+        search_slack_history,
+        # Slack action tools
+        send_slack_message,
+        list_slack_channels,
+        list_slack_users,
+        get_channel_info,
+        # Utility tools
+        get_current_time,
+        calculate,
+    ]
+
+    # Add MCP tools if available (following MAF tool integration patterns)
+    if is_mcp_enabled():
+        mcp_tools = mcp_tools_to_maf_tools()
+        tools.extend(mcp_tools)
+        print(f"[MCP] Added {len(mcp_tools)} MCP tools to agent")
+
     return client.as_agent(
         name="SlackAssistant",
         instructions=instructions,
-        tools=[
-            # RAG tool (following MAF best practices)
-            search_slack_history,
-            # Slack action tools
-            send_slack_message,
-            list_slack_channels,
-            list_slack_users,
-            get_channel_info,
-            # Utility tools
-            get_current_time,
-            calculate,
-        ],
+        tools=tools,
     )
 
 
@@ -397,7 +424,7 @@ async def main():
     global bot_user_id
 
     print("=" * 50)
-    print("MAF Slack Bot - With Action Tools + RAG!")
+    print("MAF Slack Bot - Full Featured!")
     print("=" * 50)
 
     # Initialize RAG vector store
@@ -414,6 +441,18 @@ async def main():
     init_memory()
     print(f"Memory: {'Enabled' if is_memory_enabled() else 'Disabled'}")
 
+    # Initialize MCP system (MAF tool integration pattern)
+    print("Initializing MCP system...")
+    try:
+        await initialize_mcp()
+        if is_mcp_enabled():
+            servers = get_connected_servers()
+            print(f"MCP: Enabled ({', '.join(servers)})")
+        else:
+            print("MCP: No servers connected")
+    except Exception as e:
+        print(f"MCP: Failed to initialize - {e}")
+
     # Get bot user ID
     auth = await web_client.auth_test()
     bot_user_id = auth["user_id"]
@@ -425,18 +464,31 @@ async def main():
     print("  - RAG: Search past Slack messages")
     print("  - Memory: Remember facts about users (mem0)")
     print("  - Tools: Slack actions, time, math")
+    if is_mcp_enabled():
+        print(f"  - MCP: {', '.join(get_connected_servers())} integration")
     print("")
     print("Try these commands:")
     print('  "What did we discuss about hello?"')
     print('  "I love Python programming"  (bot will remember!)')
     print('  "What do you remember about me?"')
     print('  "What time is it?"')
+    if is_mcp_enabled():
+        if "github" in get_connected_servers():
+            print('  "List my GitHub repos"')
+        if "notion" in get_connected_servers():
+            print('  "Search Notion for meeting notes"')
     print("")
     print("Press Ctrl+C to stop")
     print("=" * 50)
 
-    handler = AsyncSocketModeHandler(app, os.getenv("SLACK_APP_TOKEN"))
-    await handler.start_async()
+    try:
+        handler = AsyncSocketModeHandler(app, os.getenv("SLACK_APP_TOKEN"))
+        await handler.start_async()
+    finally:
+        # Cleanup MCP on exit
+        if is_mcp_enabled():
+            print("\nShutting down MCP...")
+            await shutdown_mcp()
 
 
 if __name__ == "__main__":

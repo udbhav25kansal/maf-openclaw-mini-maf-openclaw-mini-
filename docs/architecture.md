@@ -1382,12 +1382,27 @@ The MAF-Openclaw-Mini implementation follows the same architecture as the TypeSc
 
 ### Key Advantages of MAF Over Manual Implementation
 
-1. **Built-in MCP Support** - `HostedMCPTool` eliminates custom MCP client code
+1. **MCP Integration** - Custom MCP client for stdio-based servers (GitHub, Notion); `HostedMCPTool` available for URL-based servers
 2. **Built-in Web Search** - `HostedWebSearchTool` eliminates custom web fetcher
 3. **Automatic Tool Calling** - No manual loop needed
 4. **Type-Safe Tools** - `Annotated` with `Field` provides automatic schema generation
 5. **OpenTelemetry Built-in** - Observability without extra setup
 6. **Context Managers** - Proper resource management
+
+### MCP Implementation Note
+
+We implemented a custom MCP client (`src/maf_openclaw_mini/mcp/`) for stdio-based MCP servers
+(like `@modelcontextprotocol/server-github`). This is because:
+- Standard MCP servers communicate via stdio JSON-RPC, not HTTP URLs
+- MAF's `HostedMCPTool` is designed for URL-based hosted MCP servers
+- Our implementation follows the same pattern as the TypeScript version
+
+The MCP module:
+1. Spawns MCP server processes (e.g., `npx @modelcontextprotocol/server-github`)
+2. Communicates via stdio JSON-RPC protocol
+3. Discovers tools via `tools/list` method
+4. Converts MCP tools to MAF `@tool` decorated functions
+5. Routes tool calls to the appropriate MCP server
 
 ### Sources
 
