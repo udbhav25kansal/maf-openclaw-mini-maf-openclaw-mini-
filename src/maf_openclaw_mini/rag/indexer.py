@@ -7,6 +7,7 @@ Following Microsoft RAG best practices:
 - Chunking: Messages are naturally chunked (one per document)
 - Metadata: Each document includes source information for citation
 - Batch processing: Efficient embedding generation
+- Background indexing: Periodic updates without blocking
 
 Reference: https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/rag/rag-solution-design-and-evaluation-guide
 """
@@ -201,6 +202,140 @@ async def run_indexer() -> None:
         print(f"Errors: {len(results['errors'])}")
         for error in results["errors"]:
             print(f"  - {error}")
+
+
+# ======================
+# BACKGROUND INDEXER
+# ======================
+
+class BackgroundIndexer:
+    """
+    Background indexer that periodically updates the RAG index.
+
+    Following best practices for background tasks:
+    - Non-blocking async operation
+    - Graceful shutdown support
+    - Error handling and logging
+    - Configurable interval
+
+    Usage:
+        indexer = BackgroundIndexer(interval_hours=1)
+        indexer.start()
+        # ... later ...
+        await indexer.stop()
+    """
+
+    def __init__(self, interval_hours: float = 1.0):
+        """
+        Initialize the background indexer.
+
+        Args:
+            interval_hours: Hours between indexing runs (default: 1)
+        """
+        self.interval_seconds = interval_hours * 3600
+        self._task: Optional[asyncio.Task] = None
+        self._running = False
+        self._last_run: Optional[datetime] = None
+        self._last_result: Optional[dict] = None
+
+    def start(self) -> None:
+        """Start the background indexer."""
+        if self._running:
+            print("[Indexer] Already running")
+            return
+
+        self._running = True
+        self._task = asyncio.create_task(self._run_loop())
+        print(f"[Indexer] Started (interval: {self.interval_seconds / 3600:.1f}h)")
+
+    async def stop(self) -> None:
+        """Stop the background indexer gracefully."""
+        if not self._running:
+            return
+
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
+        print("[Indexer] Stopped")
+
+    async def _run_loop(self) -> None:
+        """Main indexing loop."""
+        # Wait a bit before first run (let bot start up)
+        await asyncio.sleep(10)
+
+        while self._running:
+            try:
+                await self._do_index()
+            except Exception as e:
+                print(f"[Indexer] Error: {e}")
+
+            # Wait for next interval
+            if self._running:
+                await asyncio.sleep(self.interval_seconds)
+
+    async def _do_index(self) -> None:
+        """Perform one indexing run."""
+        print(f"[Indexer] Starting indexing run...")
+        self._last_run = datetime.now()
+
+        try:
+            results = await index_all_channels()
+            self._last_result = results
+
+            if results["messages_indexed"] > 0:
+                print(f"[Indexer] Indexed {results['messages_indexed']} new messages")
+            else:
+                print("[Indexer] No new messages to index")
+
+        except Exception as e:
+            print(f"[Indexer] Error during indexing: {e}")
+            self._last_result = {"error": str(e)}
+
+    def is_running(self) -> bool:
+        """Check if the indexer is running."""
+        return self._running
+
+    def get_status(self) -> dict:
+        """Get indexer status."""
+        return {
+            "running": self._running,
+            "last_run": self._last_run.isoformat() if self._last_run else None,
+            "last_result": self._last_result,
+            "interval_hours": self.interval_seconds / 3600,
+        }
+
+
+# Global indexer instance
+_background_indexer: Optional[BackgroundIndexer] = None
+
+
+def get_background_indexer() -> BackgroundIndexer:
+    """Get the global background indexer instance."""
+    global _background_indexer
+    if _background_indexer is None:
+        interval = float(os.getenv("RAG_INDEX_INTERVAL_HOURS", "1"))
+        _background_indexer = BackgroundIndexer(interval_hours=interval)
+    return _background_indexer
+
+
+def start_background_indexer() -> BackgroundIndexer:
+    """Start the global background indexer."""
+    indexer = get_background_indexer()
+    indexer.start()
+    return indexer
+
+
+async def stop_background_indexer() -> None:
+    """Stop the global background indexer."""
+    global _background_indexer
+    if _background_indexer:
+        await _background_indexer.stop()
 
 
 if __name__ == "__main__":

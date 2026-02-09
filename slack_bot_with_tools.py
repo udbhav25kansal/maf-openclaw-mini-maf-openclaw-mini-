@@ -38,6 +38,7 @@ from agent_framework.openai import OpenAIChatClient
 # https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-rag
 from maf_openclaw_mini.rag.search_tool import search_slack_history
 from maf_openclaw_mini.rag.vectorstore import init_vectorstore, get_document_count
+from maf_openclaw_mini.rag.indexer import start_background_indexer, stop_background_indexer
 
 # Memory imports (following MAF memory best practices)
 # https://learn.microsoft.com/en-us/agent-framework/tutorials/agents/memory
@@ -479,6 +480,10 @@ async def main():
     doc_count = await get_document_count()
     print(f"RAG: {doc_count} documents indexed")
 
+    # Start background indexer
+    bg_indexer = start_background_indexer()
+    print(f"RAG: Background indexer started (interval: {os.getenv('RAG_INDEX_INTERVAL_HOURS', '1')}h)")
+
     if doc_count == 0:
         print("  TIP: Run 'python test_rag.py' to index messages first")
 
@@ -532,9 +537,14 @@ async def main():
         handler = AsyncSocketModeHandler(app, os.getenv("SLACK_APP_TOKEN"))
         await handler.start_async()
     finally:
-        # Cleanup MCP on exit
+        # Cleanup on exit
+        print("\nShutting down...")
+
+        # Stop background indexer
+        await stop_background_indexer()
+
+        # Stop MCP
         if is_mcp_enabled():
-            print("\nShutting down MCP...")
             await shutdown_mcp()
 
 
