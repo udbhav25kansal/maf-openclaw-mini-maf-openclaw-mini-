@@ -271,7 +271,7 @@ def calculate(
 # CREATE AGENT
 # ======================
 
-async def create_agent_with_memory(user_id: str, user_message: str, session_id: Optional[str] = None):
+async def create_agent_with_memory(user_id: str, user_message: str, channel_id: str, session_id: Optional[str] = None):
     """
     Create an agent with memory and session context.
 
@@ -355,8 +355,18 @@ Examples:
 When citing search results, mention the channel and who said it.
 Keep responses concise. Use Slack formatting: *bold*, _italic_, `code`."""
 
-    # Inject context (memory + session history)
+    # Inject context (memory + session history + user info)
     instructions = base_instructions
+
+    # Add user context so LLM knows what values to use for tools
+    user_context = f"""
+CURRENT USER CONTEXT (use these values when calling tools that need them):
+- user_id: {user_id}
+- channel_id: {channel_id}
+
+When calling set_reminder, list_reminders, or other tools that need user_id/channel_id, use the values above."""
+    instructions = f"{instructions}\n\n{user_context}"
+
     if session_context:
         instructions = f"{instructions}\n\n{session_context}"
     if memory_context:
@@ -429,7 +439,7 @@ async def handle_mention(event, say):
         session = get_or_create_session(user, channel, thread_ts)
 
         # Create agent with memory + session context (MAF pattern)
-        agent = await create_agent_with_memory(user, clean_text, session.id)
+        agent = await create_agent_with_memory(user, clean_text, channel, session.id)
         result = await agent.run(clean_text)
         await say(result.text)
         print(f"[Response] {result.text[:100]}...")
@@ -474,7 +484,7 @@ async def handle_dm(event, say):
         session = get_or_create_session(user, channel)
 
         # Create agent with memory + session context (MAF pattern)
-        agent = await create_agent_with_memory(user, text, session.id)
+        agent = await create_agent_with_memory(user, text, channel, session.id)
         result = await agent.run(text)
         await say(result.text)
         print(f"[Response] {result.text[:100]}...")
