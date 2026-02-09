@@ -1,0 +1,41 @@
+[project]
+name = "maf-openclaw-mini"
+version = "1.0.0"
+description = "Slack AI Assistant built with Microsoft Agent Framework"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Udbhav" }
+]
+keywords = ["slack", "ai", "agent", "microsoft-agent-framework", "chatbot"]
+
+dependencies = [
+    "agent-framework>=1.0.0b260130",
+    "python-dotenv>=1.0.0",
+    "slack-bolt>=1.18.0",
+    "slack-sdk>=3.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "black>=24.0.0",
+    "ruff>=0.3.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
