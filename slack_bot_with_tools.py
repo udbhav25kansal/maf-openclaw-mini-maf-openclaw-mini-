@@ -1,6 +1,6 @@
 """
-Step 7-10: Slack Bot with Action Tools + RAG + Memory + MCP
-The bot can now DO things in Slack, search message history, remember facts, and use external tools!
+Step 7-11: Slack Bot with Action Tools + RAG + Memory + MCP + Storage
+Full-featured bot with all capabilities!
 
 Following Microsoft Agent Framework best practices:
 - https://learn.microsoft.com/en-us/agent-framework/tutorials/agents/function-tools
@@ -57,6 +57,18 @@ from maf_openclaw_mini.mcp import (
     is_mcp_enabled,
     get_connected_servers,
     mcp_tools_to_maf_tools,
+)
+
+# Storage imports (following MAF ContextProvider pattern)
+# https://learn.microsoft.com/en-us/agent-framework/tutorials/agents/memory
+from maf_openclaw_mini.storage import (
+    init_database,
+    get_or_create_session,
+    add_message as db_add_message,
+    get_session_messages,
+    get_stats,
+    init_session_provider,
+    build_conversation_context,
 )
 
 # ======================
@@ -238,14 +250,15 @@ def calculate(
 # CREATE AGENT
 # ======================
 
-async def create_agent_with_memory(user_id: str, user_message: str):
+async def create_agent_with_memory(user_id: str, user_message: str, session_id: Optional[str] = None):
     """
-    Create an agent with memory context.
+    Create an agent with memory and session context.
 
-    Following MAF memory best practices:
-    - Search memories before agent invocation
-    - Inject relevant memories as additional context
-    - Store memories after conversation
+    Following MAF ContextProvider best practices:
+    - Search memories before agent invocation (mem0)
+    - Load conversation history from SQLite (session)
+    - Inject as additional context
+    - Store after conversation
 
     Reference: https://learn.microsoft.com/en-us/agent-framework/tutorials/agents/memory
     """
@@ -261,6 +274,17 @@ async def create_agent_with_memory(user_id: str, user_message: str):
         memory_context = build_memory_context(memories)
         if memory_context:
             print(f"[Memory] Found {len(memories)} relevant memories for user {user_id}")
+
+    # SESSION: Load conversation history from SQLite (MAF ContextProvider pattern)
+    session_context = ""
+    if session_id:
+        messages = get_session_messages(session_id, limit=10)
+        if messages:
+            session_context = build_conversation_context([
+                type('ChatMessage', (), {'role': m.role, 'content': m.content, 'timestamp': m.timestamp})()
+                for m in messages
+            ])
+            print(f"[Session] Loaded {len(messages)} messages from history")
 
     # Build instructions with memory context
     base_instructions = """You are a helpful Slack assistant. You MUST use your tools to answer questions.
@@ -297,11 +321,12 @@ Examples:
 When citing search results, mention the channel and who said it.
 Keep responses concise. Use Slack formatting: *bold*, _italic_, `code`."""
 
-    # Inject memory context if available
+    # Inject context (memory + session history)
+    instructions = base_instructions
+    if session_context:
+        instructions = f"{instructions}\n\n{session_context}"
     if memory_context:
-        instructions = f"{base_instructions}\n\n{memory_context}"
-    else:
-        instructions = base_instructions
+        instructions = f"{instructions}\n\n{memory_context}"
 
     # Build tools list
     tools = [
@@ -345,6 +370,7 @@ async def handle_mention(event, say):
     text = event.get("text", "")
     user = event.get("user")
     channel = event.get("channel")
+    thread_ts = event.get("thread_ts")
 
     if bot_user_id:
         clean_text = remove_bot_mention(text, bot_user_id)
@@ -358,11 +384,18 @@ async def handle_mention(event, say):
         return
 
     try:
-        # Create agent with memory context (MAF pattern)
-        agent = await create_agent_with_memory(user, clean_text)
+        # SESSION: Get or create session (MAF ContextProvider pattern)
+        session = get_or_create_session(user, channel, thread_ts)
+
+        # Create agent with memory + session context (MAF pattern)
+        agent = await create_agent_with_memory(user, clean_text, session.id)
         result = await agent.run(clean_text)
         await say(result.text)
         print(f"[Response] {result.text[:100]}...")
+
+        # SESSION: Store messages in SQLite (MAF invoked pattern)
+        db_add_message(session.id, "user", clean_text)
+        db_add_message(session.id, "assistant", result.text)
 
         # MEMORY: Store conversation for future reference (MAF invoked pattern)
         if is_memory_enabled():
@@ -396,11 +429,18 @@ async def handle_dm(event, say):
     print(f"[DM] User {user}: {text}")
 
     try:
-        # Create agent with memory context (MAF pattern)
-        agent = await create_agent_with_memory(user, text)
+        # SESSION: Get or create session for DM (MAF ContextProvider pattern)
+        session = get_or_create_session(user, channel)
+
+        # Create agent with memory + session context (MAF pattern)
+        agent = await create_agent_with_memory(user, text, session.id)
         result = await agent.run(text)
         await say(result.text)
         print(f"[Response] {result.text[:100]}...")
+
+        # SESSION: Store messages in SQLite (MAF invoked pattern)
+        db_add_message(session.id, "user", text)
+        db_add_message(session.id, "assistant", result.text)
 
         # MEMORY: Store conversation for future reference (MAF invoked pattern)
         if is_memory_enabled():
@@ -426,6 +466,12 @@ async def main():
     print("=" * 50)
     print("MAF Slack Bot - Full Featured!")
     print("=" * 50)
+
+    # Initialize SQLite database (MAF ContextProvider pattern)
+    print("Initializing database...")
+    init_database()
+    stats = get_stats()
+    print(f"Database: {stats['sessions']} sessions, {stats['messages']} messages")
 
     # Initialize RAG vector store
     print("Initializing RAG system...")
@@ -461,6 +507,7 @@ async def main():
 
     print("")
     print("Features:")
+    print("  - Storage: SQLite session & message history")
     print("  - RAG: Search past Slack messages")
     print("  - Memory: Remember facts about users (mem0)")
     print("  - Tools: Slack actions, time, math")
