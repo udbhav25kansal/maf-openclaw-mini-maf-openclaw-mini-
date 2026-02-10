@@ -290,7 +290,7 @@ def get_session_messages(
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT * FROM messages WHERE session_id = ?
-               ORDER BY timestamp DESC LIMIT ?""",
+               ORDER BY timestamp DESC, id DESC LIMIT ?""",
             (session_id, limit),
         ).fetchall()
 

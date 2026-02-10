@@ -11,9 +11,10 @@ Reference: https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/a
 
 import os
 import json
-from typing import Optional
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
+
+from agent_framework import MCPStdioTool
 
 load_dotenv()
 
@@ -129,3 +130,22 @@ def validate_mcp_config(config: MCPConfig) -> list[str]:
             errors.append(f"Server {server.name}: missing command")
 
     return errors
+
+
+def build_mcp_tools() -> list[MCPStdioTool]:
+    """
+    Build MAF MCPStdioTool instances from configuration.
+
+    MCPStdioTool auto-discovers tools, auto-converts to FunctionTool,
+    and manages subprocess lifecycle via async with.
+    """
+    config = load_mcp_config()
+    return [
+        MCPStdioTool(
+            name=s.name,
+            command=s.command,
+            args=s.args,
+            env=s.env,
+        )
+        for s in config.servers
+    ]

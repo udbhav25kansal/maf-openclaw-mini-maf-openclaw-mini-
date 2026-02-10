@@ -1,30 +1,12 @@
 """
 Memory Module
 
-Following Microsoft Agent Framework best practices for memory:
-https://learn.microsoft.com/en-us/agent-framework/tutorials/agents/memory
-
-This module provides:
-- mem0 API client for long-term memory storage
-- Memory context builder for agent prompts
+Uses MAF's Mem0Provider (from agent_framework_mem0) combined with
+SessionContextProvider via a CompositeContextProvider.
 """
 
-from .mem0_client import (
-    init_memory,
-    is_memory_enabled,
-    add_memory,
-    search_memory,
-    get_all_memories,
-    delete_memory,
-    build_memory_context,
-)
+from .composite_provider import CompositeContextProvider
 
 __all__ = [
-    "init_memory",
-    "is_memory_enabled",
-    "add_memory",
-    "search_memory",
-    "get_all_memories",
-    "delete_memory",
-    "build_memory_context",
+    "CompositeContextProvider",
 ]

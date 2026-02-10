@@ -1,91 +1,91 @@
 """
-Step 9: Test Memory System
+Test Memory System
 
-This tests the mem0 integration for storing and retrieving user memories.
+Tests the MAF-native CompositeContextProvider which wraps
+SessionContextProvider + Mem0Provider.
 """
 
 import asyncio
 import os
 import sys
 
-# Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from maf_openclaw_mini.memory.mem0_client import (
-    init_memory,
-    is_memory_enabled,
-    add_memory,
-    search_memory,
-    get_all_memories,
-    build_memory_context,
-)
+from agent_framework import ChatMessage
+
+from maf_openclaw_mini.storage import init_database
+from maf_openclaw_mini.storage.session_provider import SessionContextProvider
+from maf_openclaw_mini.memory.composite_provider import CompositeContextProvider
 
 
 async def main():
     print("=" * 50)
-    print("Memory System Test (mem0)")
+    print("Memory System Test (MAF-native)")
     print("=" * 50)
 
-    # Initialize memory
-    if not init_memory():
-        print("\nMemory system not available.")
-        print("Check MEM0_API_KEY and MEMORY_ENABLED in .env")
-        return
+    # Initialize database (needed for session provider)
+    init_database()
 
-    print(f"\nMemory enabled: {is_memory_enabled()}")
+    # Build composite provider
+    session_provider = SessionContextProvider()
+    provider = CompositeContextProvider(session_provider=session_provider)
 
-    # Test user ID
+    print(f"\nMem0 enabled: {provider.is_mem0_enabled}")
+
     test_user = "U_TEST_USER"
+    test_channel = "C_TEST_CHANNEL"
 
-    # Test 1: Add a memory
+    # Test 1: invoking() — should return context with user instructions
     print("\n" + "-" * 40)
-    print("Test 1: Adding memory...")
+    print("Test 1: invoking() — context injection")
     print("-" * 40)
 
-    messages = [
-        {"role": "user", "content": "I love Python programming and coffee"},
-        {"role": "assistant", "content": "That's great! Python is a wonderful language."},
-    ]
+    msg = ChatMessage(role="user", text="I love Python programming and coffee")
+    context = await provider.invoking(
+        msg,
+        user_id=test_user,
+        channel_id=test_channel,
+    )
 
-    result = await add_memory(messages, test_user)
-    if result:
-        print("Memory added successfully!")
-        print(f"Response: {result}")
-    else:
-        print("Failed to add memory")
+    print(f"Context instructions present: {bool(context.instructions)}")
+    if context.instructions:
+        print(f"Instructions preview: {context.instructions[:200]}...")
 
-    # Test 2: Search memories
+    # Test 2: invoked() — should persist to session + mem0
     print("\n" + "-" * 40)
-    print("Test 2: Searching memories...")
+    print("Test 2: invoked() — persistence")
     print("-" * 40)
 
-    memories = await search_memory("programming", test_user)
-    print(f"Found {len(memories)} memories")
-    for mem in memories:
-        print(f"  - {mem.get('memory', 'N/A')}")
+    request = ChatMessage(role="user", text="I love Python programming and coffee")
+    response = ChatMessage(role="assistant", text="That's great! Python is a wonderful language.")
 
-    # Test 3: Get all memories
+    await provider.invoked(
+        request,
+        response,
+        user_id=test_user,
+        channel_id=test_channel,
+    )
+    print("invoked() completed (messages persisted)")
+
+    # Test 3: invoking() again — should include history
     print("\n" + "-" * 40)
-    print("Test 3: Getting all memories...")
+    print("Test 3: invoking() again — conversation history")
     print("-" * 40)
 
-    all_memories = await get_all_memories(test_user)
-    print(f"Total memories for user: {len(all_memories)}")
+    msg2 = ChatMessage(role="user", text="What do you remember about me?")
+    context2 = await provider.invoking(
+        msg2,
+        user_id=test_user,
+        channel_id=test_channel,
+    )
 
-    # Test 4: Build context
-    print("\n" + "-" * 40)
-    print("Test 4: Building memory context...")
-    print("-" * 40)
-
-    context = build_memory_context(memories)
-    if context:
-        print("Memory context:")
-        print(context)
-    else:
-        print("No context to build (no memories found)")
+    print(f"Context instructions present: {bool(context2.instructions)}")
+    if context2.instructions:
+        print(f"Instructions:\n{context2.instructions}")
 
     print("\n" + "=" * 50)
     print("Memory Test Complete!")
