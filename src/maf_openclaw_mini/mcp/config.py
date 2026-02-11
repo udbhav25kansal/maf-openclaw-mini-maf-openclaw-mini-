@@ -146,6 +146,7 @@ def build_mcp_tools() -> list[MCPStdioTool]:
             command=s.command,
             args=s.args,
             env=s.env,
+            load_prompts=False,
         )
         for s in config.servers
     ]

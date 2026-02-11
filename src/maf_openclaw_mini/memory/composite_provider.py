@@ -91,13 +91,23 @@ class CompositeContextProvider(ContextProvider):
             user_ctx = build_user_context_instructions(user_id, channel_id)
 
         # Get mem0 context (user memories)
+        # Mem0Provider returns memories as Context.messages (not .instructions),
+        # so we extract the text from the messages to inject as instructions.
         mem0_instructions = ""
         if user_id:
             mem0_provider = self._get_mem0_provider(user_id)
             if mem0_provider:
                 try:
                     mem0_ctx = await mem0_provider.invoking(messages, **kwargs)
-                    mem0_instructions = mem0_ctx.instructions or ""
+                    # Mem0Provider puts memories in messages as ChatMessage objects
+                    if mem0_ctx.messages:
+                        mem0_parts = []
+                        for msg in mem0_ctx.messages:
+                            if msg.text and msg.text.strip():
+                                mem0_parts.append(msg.text)
+                        mem0_instructions = "\n".join(mem0_parts)
+                    elif mem0_ctx.instructions:
+                        mem0_instructions = mem0_ctx.instructions
                 except Exception as e:
                     print(f"[Memory] Mem0 invoking error: {e}")
 
